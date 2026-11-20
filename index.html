@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where Is It?</title>
+<style>
+*{box-sizing:border-box;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+body{margin:0;background:#f4f6f8;color:#16202a;min-height:100vh;display:flex;justify-content:center}
+.app{width:100%;max-width:430px;background:#fff;min-height:100vh;display:flex;flex-direction:column}
+header{padding:18px 20px 10px;font-weight:800;font-size:22px}
+main{flex:1;padding:0 20px 20px}
+.tabs{display:flex;background:#eef1f4;border-radius:14px;padding:4px;margin-bottom:16px}
+.tab{flex:1;text-align:center;padding:10px;border-radius:11px;font-weight:600;color:#5b6672;cursor:pointer}
+.tab.active{background:#fff;color:#111;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+input{width:100%;padding:14px;border:1.5px solid #d8dee4;border-radius:12px;font-size:16px;margin-bottom:10px;background:#fff}
+button{width:100%;padding:15px;border:0;border-radius:12px;font-size:16px;font-weight:700;cursor:pointer}
+.primary{background:#2563eb;color:#fff}
+.mic{background:#eef2ff;color:#2563eb;margin-bottom:10px}
+.card{border:1.5px solid #e3e8ee;border-radius:14px;padding:14px;margin-bottom:10px}
+.card b{display:block;font-size:17px;margin-bottom:3px}
+.card small{color:#5b6672}
+.result{margin-top:14px}
+.empty{color:#6b7683;text-align:center;padding:30px 10px}
+.saved{background:#e7f7ec;color:#166534;padding:12px;border-radius:12px;margin-top:10px;font-weight:600;text-align:center}
+.hidden{display:none}
+.note{font-size:13px;color:#5b6672;margin-top:12px;line-height:1.4}
+</style>
+</head>
+<body>
+<div class="app">
+<header>Where Is It?</header>
+<main>
+<div class="tabs">
+<div class="tab active" id="tabFind" onclick="show('find')">Find</div>
+<div class="tab" id="tabStore" onclick="show('store')">Store</div>
+</div>
+
+<section id="find">
+<input id="search" placeholder="Item name" oninput="findItems()">
+<button class="mic" onclick="startVoice('search')">🎙️ Speak item name</button>
+<div id="results" class="result"></div>
+</section>
+
+<section id="store" class="hidden">
+<input id="itemName" placeholder="Item name" oninput="saveReady()">
+<input id="itemPlace" placeholder="Where is it kept?" oninput="saveReady()">
+<button class="mic" onclick="startVoice('itemName')">🎙️ Speak item name</button>
+<button class="mic" onclick="startVoice('itemPlace')">🎙️ Speak location</button>
+<button class="primary" id="saveBtn" onclick="saveItem()" disabled>Save location</button>
+<div id="savedMsg" class="saved hidden">Item stored</div>
+<div class="note">Tap a microphone button, allow microphone access if asked, then speak clearly. You can also type instead.</div>
+</section>
+</main>
+</div>
+<script>
+const KEY='whereIsItItems';
+function getItems(){return JSON.parse(localStorage.getItem(KEY)||'[]')}
+function setItems(x){localStorage.setItem(KEY,JSON.stringify(x))}
+function show(t){
+ document.getElementById('find').classList.toggle('hidden',t!=='find');
+ document.getElementById('store').classList.toggle('hidden',t!=='store');
+ document.getElementById('tabFind').classList.toggle('active',t==='find');
+ document.getElementById('tabStore').classList.toggle('active',t==='store');
+ if(t==='find')findItems();
+}
+function saveReady(){
+ const n=itemName.value.trim(),p=itemPlace.value.trim();
+ saveBtn.disabled=!(n&&p);
+ savedMsg.classList.add('hidden');
+}
+function saveItem(){
+ const items=getItems();
+ const name=itemName.value.trim(), place=itemPlace.value.trim();
+ items.unshift({name,place,time:Date.now()});
+ setItems(items);
+ itemName.value='';itemPlace.value='';saveReady();
+ savedMsg.classList.remove('hidden');
+ speak('Item stored.');
+ setTimeout(()=>savedMsg.classList.add('hidden'),1800);
+}
+function findItems(){
+ const q=search.value.trim().toLowerCase(),items=getItems();
+ const box=document.getElementById('results');
+ if(!q){box.innerHTML='<div class="empty">Search an item to hear where it is kept.</div>';return}
+ const matches=items.filter(i=>i.name.toLowerCase().includes(q));
+ if(!matches.length){
+  box.innerHTML='<div class="empty">No saved item matches this name.</div>';
+  speak('No saved item matches this name.');
+  return;
+ }
+ box.innerHTML=matches.map(i=>`<div class="card"><b>${esc(i.name)}</b><small>Kept in: ${esc(i.place)}</small></div>`).join('');
+ const spoken = matches.length===1
+  ? `${matches[0].name} is kept in ${matches[0].place}.`
+  : `Found ${matches.length} matches. ` + matches.slice(0,5).map(i=>`${i.name} is kept in ${i.place}`).join('. ');
+ speak(spoken);
+}
+function esc(s){return s.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function speak(text){
+ try{
+  speechSynthesis.cancel();
+  const u=new SpeechSynthesisUtterance(text);
+  u.lang='en-IN';u.rate=1;u.pitch=1;
+  speechSynthesis.speak(u);
+ }catch(e){}
+}
+function startVoice(fieldId){
+ const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+ const field=document.getElementById(fieldId);
+ if(!SR){
+  alert('Your browser does not support voice input. Please type the details instead.');
+  field.focus();
+  return;
+ }
+ try{
+  const r=new SR();
+  r.lang='en-IN';
+  r.interimResults=false;
+  r.maxAlternatives=1;
+  r.onresult=e=>{
+   const text=e.results[0][0].transcript;
+   field.value=text;
+   if(fieldId==='search')findItems(); else saveReady();
+  };
+  r.onerror=e=>{
+   if(e.error==='not-allowed'||e.error==='service-not-allowed'){
+    alert('Microphone access is blocked. In Safari, open Settings > Safari > Microphone, allow this website, then try again. You can also type the details.');
+   }else if(e.error!=='aborted'){
+    alert('Could not hear that. Please try again or type the details.');
+   }
+  };
+  r.start();
+ }catch(e){
+  alert('Voice input could not start. Please type the details instead.');
+ }
+}
+findItems();
+</script>
+</body>
+</html>
